@@ -3,12 +3,12 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"io/fs"
 	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"text/template"
 	"time"
@@ -24,20 +24,6 @@ type config struct {
 	Targets []configTarget `json:"targets"`
 }
 
-func buildTarget(schemaFile string, tmpl *template.Template, output io.Writer) error {
-	schema, err := ioutil.ReadFile(schemaFile)
-	if err != nil {
-		return err
-	}
-
-	tmplData, err := transformGraphql(string(schema))
-	if err != nil {
-		return err
-	}
-
-	return tmpl.Execute(output, tmplData)
-}
-
 func buildTargets(target configTarget) error {
 	buildStart := time.Now()
 
@@ -51,12 +37,14 @@ func buildTargets(target configTarget) error {
 		return err
 	}
 
-	fd, err := os.OpenFile(target.OutputFile, os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return err
-	}
-	defer fd.Close()
 	fmt.Printf("\nBuilding %s using %s\n", target.OutputFile, target.TemplateFile)
+
+	templateData := TemplateData{
+		Fragments: make([]Fragment, 0),
+		Queries:   make([]Operation, 0),
+		Mutations: make([]Operation, 0),
+	}
+	visitedFiles := make(map[string]bool, 100)
 
 	for _, schemaFileGlob := range target.SchemaFile {
 		if strings.HasPrefix(schemaFileGlob, "./") {
@@ -83,20 +71,45 @@ func buildTargets(target configTarget) error {
 			}
 
 			schemaFilePath = filepath.Join(walkPath, schemaFilePath)
-			if matched, err := path.Match(absGlob, schemaFilePath); matched {
+			if _, ok := visitedFiles[schemaFilePath]; ok {
+				return nil
+			}
+
+			if matched, _ := path.Match(absGlob, schemaFilePath); matched {
 				fmt.Printf(" > adding: %s\n", schemaFilePath)
-				err := buildTarget(schemaFilePath, tmpl, fd)
+
+				schema, err := ioutil.ReadFile(schemaFilePath)
 				if err != nil {
 					return err
 				}
-			} else {
-				fmt.Printf("fuck: %s - %s (%#v)\n", absGlob, schemaFilePath, err)
+
+				err = transformGraphql(&templateData, string(schema))
+				if err != nil {
+					return err
+				}
+
+				visitedFiles[schemaFilePath] = true
 			}
 			return nil
 		})
 		if err != nil {
 			return err
 		}
+	}
+
+	sort.SliceStable(templateData.Fragments, func(leftIdx, rightIdx int) bool {
+		return len(templateData.Fragments[leftIdx].DependentFragments) < len(templateData.Fragments[rightIdx].DependentFragments)
+	})
+
+	fd, err := os.Create(target.OutputFile)
+	if err != nil {
+		return err
+	}
+	defer fd.Close()
+
+	err = tmpl.Execute(fd, templateData)
+	if err != nil {
+		return err
 	}
 
 	fmt.Printf("Built in %s\n\n", time.Since(buildStart).Truncate(time.Millisecond).String())

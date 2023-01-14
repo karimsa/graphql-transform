@@ -21,9 +21,10 @@ type GraphqlField struct {
 }
 
 type Fragment struct {
-	Name       string
-	SourceType string
-	Fields     []GraphqlField
+	Name               string
+	SourceType         string
+	Fields             []GraphqlField
+	DependentFragments []string
 }
 
 type Variable struct {
@@ -32,9 +33,9 @@ type Variable struct {
 }
 
 type Operation struct {
-	Name      string
-	Variables []Variable
-	Fields    []GraphqlField
+	Name                  string
+	Variables             []Variable
+	Fields                []GraphqlField
 	InlineFragmentSpreads []string
 }
 
@@ -70,11 +71,18 @@ func transformFieldArgumentValue(node ast.Value) (string, error) {
 	case "FloatValue":
 		fallthrough
 	case "StringValue":
-		val, ok := node.GetValue().(string)
-		if !ok {
-			return val, fmt.Errorf("invalid %s: %#v", node.GetKind(), node.GetValue())
+		switch val := node.GetValue().(type) {
+		case string:
+			return val, nil
+		case bool:
+			if val {
+				return "true", nil
+			}
+			return "fales", nil
+		case interface{ String() string }:
+			return val.String(), nil
 		}
-		return val, nil
+		return "", fmt.Errorf("invalid %s: %#v", node.GetKind(), node.GetValue())
 
 	case "ObjectValue":
 		obj := node.GetValue().([]*ast.ObjectField)
@@ -146,13 +154,30 @@ func transformGraphqlField(def *ast.SelectionSet) ([]GraphqlField, error) {
 	return fields, nil
 }
 
+func gatherDependentFragments(fields []GraphqlField) []string {
+	fragmentNames := make([]string, 0, len(fields))
+	for _, field := range fields {
+		if field.IsSpread {
+			fragmentNames = append(fragmentNames, field.Name)
+		}
+		if len(field.SubFields) > 0 {
+			fragmentNames = append(fragmentNames, gatherDependentFragments(field.SubFields)...)
+		}
+	}
+	return fragmentNames
+}
+
 func transformFragment(def *ast.FragmentDefinition) (Fragment, error) {
 	fields, err := transformGraphqlField(def.SelectionSet)
+	if err != nil {
+		return Fragment{}, err
+	}
 	return Fragment{
-		Name:       def.Name.Value,
-		SourceType: def.TypeCondition.Name.Value,
-		Fields:     fields,
-	}, err
+		Name:               def.Name.Value,
+		SourceType:         def.TypeCondition.Name.Value,
+		Fields:             fields,
+		DependentFragments: gatherDependentFragments(fields),
+	}, nil
 }
 
 func transformVariableType(def ast.Type) (string, error) {
@@ -198,13 +223,7 @@ func transformOperation(def *ast.OperationDefinition) (Operation, error) {
 	return operation, nil
 }
 
-func transformGraphql(schema string) (TemplateData, error) {
-	templateData := TemplateData{
-		Fragments: make([]Fragment, 0),
-		Queries:   make([]Operation, 0),
-		Mutations: make([]Operation, 0),
-	}
-
+func transformGraphql(templateData *TemplateData, schema string) error {
 	doc, err := parser.Parse(parser.ParseParams{
 		Source: schema,
 		Options: parser.ParseOptions{
@@ -212,10 +231,10 @@ func transformGraphql(schema string) (TemplateData, error) {
 		},
 	})
 	if err != nil {
-		return templateData, nil
+		return nil
 	}
 	if doc.Kind != "Document" {
-		return templateData, fmt.Errorf("expected document to be top-level node")
+		return fmt.Errorf("expected document to be top-level node")
 	}
 
 	for _, def := range doc.Definitions {
@@ -225,32 +244,32 @@ func transformGraphql(schema string) (TemplateData, error) {
 			case "query":
 				query, err := transformOperation(def.(*ast.OperationDefinition))
 				if err != nil {
-					return templateData, err
+					return err
 				}
 				templateData.Queries = append(templateData.Queries, query)
 
 			case "mutation":
 				mutation, err := transformOperation(def.(*ast.OperationDefinition))
 				if err != nil {
-					return templateData, err
+					return err
 				}
 				templateData.Mutations = append(templateData.Mutations, mutation)
 
 			default:
-				return templateData, fmt.Errorf("Unknown operation kind: %s", def.(*ast.OperationDefinition).Operation)
+				return fmt.Errorf("Unknown operation kind: %s", def.(*ast.OperationDefinition).Operation)
 			}
 
 		case "FragmentDefinition":
 			frag, err := transformFragment(def.(*ast.FragmentDefinition))
 			if err != nil {
-				return templateData, err
+				return err
 			}
 			templateData.Fragments = append(templateData.Fragments, frag)
 
 		default:
-			return templateData, fmt.Errorf("Unknown definition kind: %s", def.GetKind())
+			return fmt.Errorf("Unknown definition kind: %s", def.GetKind())
 		}
 	}
 
-	return templateData, nil
+	return nil
 }
