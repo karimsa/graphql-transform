@@ -8,41 +8,77 @@ import (
 	"github.com/graphql-go/graphql/language/parser"
 )
 
+// FieldArgument represents an argument provided to a field.
 type FieldArgument struct {
-	Name  string
+	// Name is the name of the argument.
+	Name string
+	// Value is the value of the argument, serialized as a string.
+	// For example, `true`, `"hello"`, or `["a", "b"]`.
 	Value string
 }
 
+// GraphqlField represents a field selected in a query, mutation, or fragment.
 type GraphqlField struct {
-	IsSpread   bool
-	Name       string
+	// IsSpread is true if the field is a fragment spread.
+	IsSpread bool
+	// Name is the name of the field. This is empty if the field is an inline fragment.
+	Name string
+	// SourceType is the type on which the field is defined. This is only provided if
+	// the field is an inline fragment.
 	SourceType string
-	Arguments  []FieldArgument
-	SubFields  []GraphqlField
+	// Arguments is a list of all arguments provided to the field. This is nil if no
+	// arguments are provided.
+	Arguments []FieldArgument
+	// SubFields is a list of all fields selected in the body of the field. This is nil if
+	// no fields are selected.
+	SubFields []GraphqlField
 }
 
+// Fragment represents a fragment defined in the document.
 type Fragment struct {
-	Name                 string
-	SourceType           string
-	Fields               []GraphqlField
+	// Name is the name of the fragment.
+	Name string
+	// SourceType is the type on which the fragment is defined.
+	SourceType string
+	// Fields is a list of all fields selected in the body of the fragment.
+	Fields []GraphqlField
+	// FragmentDependencies is a list of all fragments used in the body of the fragment.
+	// This is only the name of the fragment, not the full definition, provided only for
+	// convenience. There is no guarantee that the fragment is defined in the same document.
 	FragmentDependencies []string
 }
 
+// Variable represents a variable accepted by a query or mutation.
 type Variable struct {
+	// Name is the name of the variable, without the leading `$`.
 	Name string
+	// Type is the type of the variable, serialized as a string.
+	// For example, `String!` or `[Int]`.
 	Type string
 }
 
+// Operation represents a query or mutation.
 type Operation struct {
-	Name                  string
-	Variables             []Variable
-	Fields                []GraphqlField
-	InlineFragmentSpreads []string
+	// Name is the name of the query or mutation. This may be empty
+	// if the query or mutation is anonymous.
+	Name string
+	// Variables is a list of all variables accepted by the operation.
+	Variables []Variable
+	// Fields is a list of all fields selected in the body of the operation.
+	Fields []GraphqlField
 }
 
+// TemplateData represents the value of `.` given to the template.
+// For example, accessing `.Fragments` in the template will give you
+// `TemplateData.Fragments`.
 type TemplateData struct {
+	// Fragments is a list of all fragments defined in the document.
 	Fragments []Fragment
-	Queries   []Operation
+	// Queries is a list of all queries defined in the document. It is
+	// separated from mutations only for convenience.
+	Queries []Operation
+	// Mutations is a list of all mutations defined in the document. It is
+	// separated from queries only for convenience.
 	Mutations []Operation
 }
 
