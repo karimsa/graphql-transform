@@ -12,6 +12,7 @@ import (
 	"strings"
 	"text/template"
 	"time"
+	"unicode"
 )
 
 type configTarget struct {
@@ -32,7 +33,10 @@ func buildTargets(target configTarget) error {
 		return err
 	}
 
-	tmpl, err := template.New(target.OutputFile).Parse(string(templateStr))
+	tmpl, err := template.New(target.OutputFile).Funcs(map[string]any{
+		"camelCase":  camelCase,
+		"pascalCase": pascalCase,
+	}).Parse(string(templateStr))
 	if err != nil {
 		return err
 	}
@@ -114,6 +118,48 @@ func buildTargets(target configTarget) error {
 
 	fmt.Printf("Built in %s\n\n", time.Since(buildStart).Truncate(time.Millisecond).String())
 	return nil
+}
+
+func splitStringByCase(str string) []string {
+	var words []string
+	var word string
+
+	for _, char := range str {
+		if unicode.IsUpper(char) {
+			if word != "" {
+				words = append(words, word)
+			}
+			word = string(char)
+		} else {
+			word += string(char)
+		}
+	}
+
+	if word != "" {
+		words = append(words, word)
+	}
+
+	return words
+}
+
+func camelCase(str string) string {
+	words := splitStringByCase(str)
+	for i, word := range words {
+		if i == 0 {
+			words[i] = strings.ToLower(word)
+		} else {
+			words[i] = strings.Title(strings.ToLower(word))
+		}
+	}
+	return strings.Join(words, "")
+}
+
+func pascalCase(str string) string {
+	words := splitStringByCase(str)
+	for i, word := range words {
+		words[i] = strings.Title(strings.ToLower(word))
+	}
+	return strings.Join(words, "")
 }
 
 func main() {
