@@ -112,6 +112,89 @@ func TestTransformGraphqlFragments(t *testing.T) {
 				},
 			},
 		},
+		{
+			input: `
+				fragment UserFields on User {
+					id
+					name
+
+					# arguments to field
+					posts(first: 10) {
+						id
+					}
+
+					# spread within parametized field
+					foo(first: 10) {
+						... on Bar {
+							id
+						}
+						... test
+					}
+				}
+			`,
+			expected: TemplateData{
+				Fragments: []Fragment{
+					{
+						Name:       "UserFields",
+						SourceType: "User",
+						Fields: []GraphqlField{
+							{
+								IsSpread: false,
+								Name:     "id",
+							},
+							{
+								IsSpread: false,
+								Name:     "name",
+							},
+							{
+								IsSpread: false,
+								Name:     "posts",
+								Arguments: []FieldArgument{
+									{
+										Name:  "first",
+										Value: "10",
+									},
+								},
+								SubFields: []GraphqlField{
+									{
+										IsSpread: false,
+										Name:     "id",
+									},
+								},
+							},
+							{
+								IsSpread: false,
+								Name:     "foo",
+								Arguments: []FieldArgument{
+									{
+										Name:  "first",
+										Value: "10",
+									},
+								},
+								SubFields: []GraphqlField{
+									{
+										IsSpread:   true,
+										Name:       "",
+										SourceType: "Bar",
+										SubFields: []GraphqlField{
+											{
+												IsSpread: false,
+												Name:     "id",
+											},
+										},
+									},
+									{
+										IsSpread: true,
+										Name:     "test",
+									},
+								},
+							},
+						},
+						FragmentDependencies: []string{"test"},
+					},
+				},
+			},
+		},
 	} {
 		actual := TemplateData{}
 		err := transformGraphql(&actual, testCase.input)
