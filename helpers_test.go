@@ -17,8 +17,8 @@ func stringSliceEqual(a, b []string) bool {
 }
 
 func TestSplitStringByCase(t *testing.T) {
-	for _, testCase := range []struct{
-		input string
+	for _, testCase := range []struct {
+		input    string
 		expected []string
 	}{
 		// One word examples

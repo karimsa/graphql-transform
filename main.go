@@ -102,7 +102,7 @@ func buildTargets(target configTarget) error {
 	}
 
 	sort.SliceStable(templateData.Fragments, func(leftIdx, rightIdx int) bool {
-		return len(templateData.Fragments[leftIdx].DependentFragments) < len(templateData.Fragments[rightIdx].DependentFragments)
+		return len(templateData.Fragments[leftIdx].FragmentDependencies) < len(templateData.Fragments[rightIdx].FragmentDependencies)
 	})
 
 	fd, err := os.Create(target.OutputFile)

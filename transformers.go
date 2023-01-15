@@ -14,17 +14,18 @@ type FieldArgument struct {
 }
 
 type GraphqlField struct {
-	IsSpread  bool
-	Name      string
-	Arguments []FieldArgument
-	SubFields []GraphqlField
+	IsSpread   bool
+	Name       string
+	SourceType string
+	Arguments  []FieldArgument
+	SubFields  []GraphqlField
 }
 
 type Fragment struct {
-	Name               string
-	SourceType         string
-	Fields             []GraphqlField
-	DependentFragments []string
+	Name                 string
+	SourceType           string
+	Fields               []GraphqlField
+	FragmentDependencies []string
 }
 
 type Variable struct {
@@ -143,9 +144,10 @@ func transformGraphqlField(def *ast.SelectionSet) ([]GraphqlField, error) {
 			}
 
 			fields = append(fields, GraphqlField{
-				IsSpread:  true,
-				Name:      inlineFragment.TypeCondition.Name.Value,
-				SubFields: subFields,
+				IsSpread:   true,
+				Name:       "",
+				SourceType: inlineFragment.TypeCondition.Name.Value,
+				SubFields:  subFields,
 			})
 		} else {
 			return nil, fmt.Errorf("Unknown selection kind: %t", selection)
@@ -154,15 +156,19 @@ func transformGraphqlField(def *ast.SelectionSet) ([]GraphqlField, error) {
 	return fields, nil
 }
 
-func gatherDependentFragments(fields []GraphqlField) []string {
+func gatherFragmentDependencies(fields []GraphqlField) []string {
 	fragmentNames := make([]string, 0, len(fields))
 	for _, field := range fields {
-		if field.IsSpread {
+		if field.IsSpread && field.Name != "" {
 			fragmentNames = append(fragmentNames, field.Name)
 		}
 		if len(field.SubFields) > 0 {
-			fragmentNames = append(fragmentNames, gatherDependentFragments(field.SubFields)...)
+			fragmentNames = append(fragmentNames, gatherFragmentDependencies(field.SubFields)...)
 		}
+	}
+
+	if len(fragmentNames) == 0 {
+		return nil
 	}
 	return fragmentNames
 }
@@ -173,10 +179,10 @@ func transformFragment(def *ast.FragmentDefinition) (Fragment, error) {
 		return Fragment{}, err
 	}
 	return Fragment{
-		Name:               def.Name.Value,
-		SourceType:         def.TypeCondition.Name.Value,
-		Fields:             fields,
-		DependentFragments: gatherDependentFragments(fields),
+		Name:                 def.Name.Value,
+		SourceType:           def.TypeCondition.Name.Value,
+		Fields:               fields,
+		FragmentDependencies: gatherFragmentDependencies(fields),
 	}, nil
 }
 
