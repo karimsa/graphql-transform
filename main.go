@@ -125,13 +125,17 @@ func splitStringByCase(str string) []string {
 	var word string
 
 	for _, char := range str {
-		if unicode.IsUpper(char) {
+		if unicode.IsLower(char) {
+			word += string(char)
+		} else {
 			if word != "" {
 				words = append(words, word)
 			}
-			word = string(char)
-		} else {
-			word += string(char)
+			if unicode.IsUpper(char) {
+				word = strings.ToLower(string(char))
+			} else {
+				word = ""
+			}
 		}
 	}
 
@@ -165,18 +169,21 @@ func pascalCase(str string) string {
 func main() {
 	confBuf, err := ioutil.ReadFile("./graphql-transform.json")
 	if err != nil {
-		panic(err)
+		fmt.Fprintf(os.Stderr, "Failed to read config from graphql-transform.json: %s\n", err.Error())
+		os.Exit(1)
 	}
 
 	conf := config{}
 	err = json.Unmarshal(confBuf, &conf)
 	if err != nil {
-		panic(err)
+		fmt.Fprintf(os.Stderr, "Failed to parse config in graphql-transform.json: %s\n", err.Error())
+		os.Exit(1)
 	}
 
-	for _, target := range conf.Targets {
+	for index, target := range conf.Targets {
 		if err := buildTargets(target); err != nil {
-			panic(err)
+			fmt.Fprintf(os.Stderr, "Building target [%d] using conig %v failed: %s\n", index, target, err.Error())
+			os.Exit(1)
 		}
 	}
 }
